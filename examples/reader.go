@@ -23,5 +23,5 @@ func main() {
 		fmt.Println("\nio.Copy failed:", err)
 		return
 	}
-	
+
 }

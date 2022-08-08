@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
+	"github.com/892294101/iconv"
 	"os"
-
-	"gopkg.in/iconv.v1"
 )
 
 func main() {
+
 	cd, err := iconv.Open("gbk", "utf-8") // utf8 => gbk
 	if err != nil {
 		fmt.Println("iconv.Open failed!")

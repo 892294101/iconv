@@ -2,7 +2,9 @@
 // iconv.go
 //
 package iconv
-// #cgo LDFLAGS: -liconv
+
+// #cgo linux CFLAGS: -I "/mnt/d/workspace/gowork/src/github.com/892294101/iconv/dep/include"
+// #cgo linux LDFLAGS: -L "/mnt/d/workspace/gowork/src/github.com/892294101/iconv/dep/lib" -liconv
 // #include <iconv.h>
 // #include <stdlib.h>
 // #include <errno.h>
@@ -16,6 +18,7 @@ import "C"
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"syscall"
 	"unsafe"
@@ -28,10 +31,11 @@ const DefaultBufSize = 4096
 
 type Iconv struct {
 	Handle C.iconv_t
+	power  bool
 }
 
 // Open returns a conversion descriptor cd, cd contains a conversion state and can not be used in multiple threads simultaneously.
-func Open(tocode string, fromcode string) (cd Iconv, err error) {
+func Open(tocode string, fromcode string) (cd *Iconv, err error) {
 
 	tocode1 := C.CString(tocode)
 	defer C.free(unsafe.Pointer(tocode1))
@@ -43,17 +47,22 @@ func Open(tocode string, fromcode string) (cd Iconv, err error) {
 	if err != nil {
 		return
 	}
-	cd = Iconv{ret}
+	cd = &Iconv{Handle: ret}
 	return
 }
 
-func (cd Iconv) Close() error {
-
-	_, err := C.iconv_close(cd.Handle)
+func (cd *Iconv) Close() error {
+	var err error
+	if !cd.power {
+		cd.power = true
+		_, err = C.iconv_close(cd.Handle)
+	} else {
+		err = errors.New("iconv has been closed")
+	}
 	return err
 }
 
-func (cd Iconv) Conv(b []byte, outbuf []byte) (out []byte, inleft int, err error) {
+func (cd *Iconv) Conv(b []byte, outbuf []byte) (out []byte, inleft int, err error) {
 
 	outn, inleft, err := cd.Do(b, len(b), outbuf)
 	if err == nil || err != E2BIG {
@@ -69,13 +78,13 @@ func (cd Iconv) Conv(b []byte, outbuf []byte) (out []byte, inleft int, err error
 	return
 }
 
-func (cd Iconv) ConvString(s string) string {
+func (cd *Iconv) ConvString(s string) (string, error) {
 	var outbuf [512]byte
-	s1, _, _ := cd.Conv([]byte(s), outbuf[:])
-	return string(s1)
+	s1, _, err := cd.Conv([]byte(s), outbuf[:])
+	return string(s1), err
 }
 
-func (cd Iconv) Do(inbuf []byte, in int, outbuf []byte) (out, inleft int, err error) {
+func (cd *Iconv) Do(inbuf []byte, in int, outbuf []byte) (out, inleft int, err error) {
 
 	if in == 0 {
 		return
@@ -95,7 +104,7 @@ func (cd Iconv) Do(inbuf []byte, in int, outbuf []byte) (out, inleft int, err er
 	return
 }
 
-func (cd Iconv) DoWrite(w io.Writer, inbuf []byte, in int, outbuf []byte) (inleft int, err error) {
+func (cd *Iconv) DoWrite(w io.Writer, inbuf []byte, in int, outbuf []byte) (inleft int, err error) {
 
 	if in == 0 {
 		return

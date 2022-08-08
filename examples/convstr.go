@@ -6,6 +6,7 @@ import (
 )
 
 func main() {
+	d := []byte("可能是用的不多可能是用的不多可能是用的不多可能是用的不多可能是用的不多可能是用的不多可能是用的不多可能是用的不多可能是用的不多可能是用的不多可能是用的不多可能是用的不多可能是用的不多可能是用的不多")
 
 	cd, err := iconv.Open("gbk", "utf-8")
 	if err != nil {
@@ -14,9 +15,15 @@ func main() {
 	}
 	defer cd.Close()
 	fmt.Println("go")
-	gbk := cd.ConvString(
-		`		你好，世界！你好，世界！你好，世界！你好，世界！
-		你好，世界！你好，世界！你好，世界！你好，世界！`)
-	fmt.Println(gbk)
+	var ind int
+	outBuf := make([]byte, len(d))
+
+	res, _, err := cd.Conv(d, outBuf)
+	if err != nil {
+		ind++
+	}
+	fmt.Println("res: ", string(res))
+	fmt.Println("=========失败： ", ind)
+	cd.Close()
 
 }
