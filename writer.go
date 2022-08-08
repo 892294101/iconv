@@ -1,82 +1,103 @@
 package iconv
 
-import "io"
+import (
+	"io"
+	"syscall"
+)
 
 type Writer struct {
-	destination       io.Writer
-	converter         *Converter
-	buffer            []byte
-	readPos, writePos int
-	err               error
+	inbuf []byte
+	outbuf []byte
+	cd Iconv
+	output io.Writer
+	n int // inbuf[0:n] is valid
+	autoSync bool
 }
 
-func NewWriter(destination io.Writer, fromEncoding string, toEncoding string) (*Writer, error) {
-	// create a converter
-	converter, err := NewConverter(fromEncoding, toEncoding)
-
-	if err == nil {
-		return NewWriterFromConverter(destination, converter), err
+func NewWriter(cd Iconv, output io.Writer, bufSize int, autoSync bool) *Writer {
+	if bufSize < 16 { bufSize = DefaultBufSize }
+	outbuf := make([]byte, bufSize)
+	var inbuf []byte
+	if !autoSync {
+		inbuf = make([]byte, bufSize)
 	}
-
-	// return the error
-	return nil, err
+	return &Writer{inbuf, outbuf, cd, output, 0, autoSync}
 }
 
-func NewWriterFromConverter(destination io.Writer, converter *Converter) (writer *Writer) {
-	writer = new(Writer)
-
-	// copy elements
-	writer.destination = destination
-	writer.converter = converter
-
-	// create 8K buffers
-	writer.buffer = make([]byte, 8*1024)
-
-	return writer
+func (w *Writer) Output(w1 io.Writer) {
+	w.Sync()
+	w.output = w1
+	w.n = 0
 }
 
-func (this *Writer) emptyBuffer() {
-	// write new data out of buffer
-	bytesWritten, err := this.destination.Write(this.buffer[this.readPos:this.writePos])
-
-	// update read position
-	this.readPos += bytesWritten
-
-	// slide existing data to beginning
-	if this.readPos > 0 {
-		// copy current bytes - is this guaranteed safe?
-		copy(this.buffer, this.buffer[this.readPos:this.writePos])
-
-		// adjust positions
-		this.writePos -= this.readPos
-		this.readPos = 0
-	}
-
-	// track any reader error / EOF
-	if err != nil {
-		this.err = err
+func (w *Writer) AutoSync(b bool) {
+	w.autoSync = b
+	if !b && w.inbuf == nil {
+		w.inbuf = make([]byte, len(w.outbuf))
 	}
 }
 
-// implement the io.Writer interface
-func (this *Writer) Write(p []byte) (n int, err error) {
-	// write data into our internal buffer
-	bytesRead, bytesWritten, err := this.converter.Convert(p, this.buffer[this.writePos:])
+func (w *Writer) Sync() error {
 
-	// update bytes written for return
-	n += bytesRead
-	this.writePos += bytesWritten
+	if w.n == 0 { return nil }
+	
+	inleft, err := w.cd.DoWrite(w.output, w.inbuf, w.n, w.outbuf)
+	if inleft > 0 {
+		copy(w.inbuf, w.inbuf[w.n-inleft:w.n])
+	}
+	w.n = inleft
+	return err
+}
 
-	// checks for when we have a full buffer
-	for this.writePos > 0 {
-		// if we have an error, just return it
-		if this.err != nil {
-			return
+func (w *Writer) Write(b []byte) (n int, err error) {
+
+	if w.autoSync {
+		var inleft int
+		inleft, err = w.cd.DoWrite(w.output, b, len(b), w.outbuf)
+		n = len(b) - inleft
+		return
+	}
+	for {
+		n1 := copy(w.inbuf[w.n:], b)
+		if n1 == 0 {
+			if len(b) > 0 { return n, EILSEQ }
+			break
 		}
-
-		// else empty the buffer
-		this.emptyBuffer()
+		w.n += n1
+		n += n1
+		if w.n == len(w.inbuf) {
+			err = w.Sync()
+			if err != nil && err != syscall.EINVAL { return }
+		}
+		if len(b) == n1 { break }
+		b = b[n1:]
 	}
-
-	return n, err
+	return n, nil
 }
+
+func (w *Writer) WriteString(b string) (n int, err error) {
+
+	if w.autoSync {
+		var inleft int
+		inleft, err = w.cd.DoWrite(w.output, []byte(b), len(b), w.outbuf)
+		n = len(b) - inleft
+		return
+	}
+	for {
+		n1 := copy(w.inbuf[w.n:], b)
+		if n1 == 0 {
+			if len(b) > 0 { return n, EILSEQ }
+			break
+		}
+		w.n += n1
+		n += n1
+		if w.n == len(w.inbuf) {
+			err = w.Sync()
+			if err != nil && err != syscall.EINVAL { return }
+		}
+		if len(b) == n1 { break }
+		b = b[n1:]
+	}
+	return n, nil
+}
+
