@@ -79,8 +79,9 @@ func (cd *Iconv) Conv(b []byte, outbuf []byte) (out []byte, inleft int, err erro
 }
 
 func (cd *Iconv) ConvString(s string) (string, error) {
-	var outbuf [512]byte
-	s1, _, err := cd.Conv([]byte(s), outbuf[:])
+	dat := []byte(s)
+	outBuf := make([]byte, len(dat))
+	s1, _, err := cd.Conv(dat, outBuf)
 	return string(s1), err
 }
 

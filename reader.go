@@ -7,14 +7,14 @@ import (
 type Reader struct {
 	rdbuf []byte
 	cnvbuf []byte
-	cd Iconv
+	cd *Iconv
 	input io.Reader
 	from, to int // rdbuf[from:to] is valid
 	m int // cnvbuf[:m] is valid
 	err error
 }
 
-func NewReader(cd Iconv, input io.Reader, bufSize int) *Reader {
+func NewReader(cd *Iconv, input io.Reader, bufSize int) *Reader {
 	if bufSize < 16 { bufSize = DefaultBufSize }
 	rdbuf := make([]byte, bufSize)
 	cnvbuf := make([]byte, bufSize)
